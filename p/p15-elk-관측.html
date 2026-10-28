@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orca Lake 클러스터 로그 수집과 신규 IDC 수집 전환 · 정재윤</title>
+<meta name="description" content="표준 없이 흩어져 있던 Orca Lake 클러스터 로그를 서비스별로 검색하고 알림받게 만든 수집 체계">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+:root {
+  --bg: #ffffff; --ink: #191f28; --body: #333d4b; --muted: #6b7684; --faint: #8b95a1;
+  --rule: #e5e8eb; --tint: #f2f4f6; --accent: #0f766e; --hot: #c92a52;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --wrap: 1000px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #101418; --ink: #f2f4f6; --body: #d1d6db; --muted: #a0a8b2; --faint: #7a838e;
+          --rule: #262c33; --tint: #181d22; --accent: #3fb8aa; --hot: #ff6b8e; }
+}
+* { box-sizing: border-box; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--bg); color: var(--body);
+       font-family: "IBM Plex Sans KR", -apple-system, "Apple SD Gothic Neo", sans-serif;
+       line-height: 1.75; word-break: keep-all; overflow-wrap: anywhere; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 32px; }
+.wrap.narrow { max-width: 760px; }
+@media (max-width: 720px) { .wrap { padding: 0 16px; } }
+.preview { font-size: 12px; text-align: center; padding: 6px 16px; background: var(--tint); color: var(--muted); }
+h1, h2, h3, h4 { color: var(--ink); }
+
+header.site { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent);
+              backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
+header.site .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.brand { font-weight: 700; color: var(--ink); line-height: 56px; }
+.brand:hover { text-decoration: none; }
+header.site nav { display: flex; gap: 24px; font-size: 15px; }
+header.site nav a { color: var(--muted); line-height: 54px; border-bottom: 2px solid transparent; }
+header.site nav a:hover { color: var(--ink); text-decoration: none; }
+header.site nav a[aria-current="page"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+
+.hero { padding: 88px 0 72px; }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 56px; align-items: center; }
+.hero h1 { margin: 0 0 32px; font-size: clamp(34px, 4.8vw, 50px); line-height: 1.3; font-weight: 700; letter-spacing: -0.03em; }
+.intro { font-size: 18px; line-height: 1.85; max-width: 38em; margin: 0 0 32px; }
+.contact { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 10px 28px; font-size: 15px; }
+.contact a { display: inline-flex; align-items: center; gap: 8px; color: var(--body); }
+.contact svg { width: 18px; height: 18px; color: var(--muted); }
+
+
+/* 첫 화면 오른쪽: 가상의 게임 로그가 흐르다 튀는 값이 섞이면 [잡기] 단추가 붙는다. 잡은·놓친 수를 아래에 센다 */
+.stream { margin: 0; border: 1px solid var(--rule); border-radius: 14px; background: var(--tint); overflow: hidden; }
+.stream header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--rule);
+                 font-size: 13px; color: var(--muted); }
+.stream header i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: beat 2s ease-in-out infinite; }
+@keyframes beat { 50% { opacity: .25; } }
+.lines { list-style: none; margin: 0; padding: 10px 0; height: calc(8 * 30px + 20px); overflow: hidden;
+         font-family: var(--mono); font-size: 12px; line-height: 30px; color: var(--muted); }
+.lines li { display: flex; gap: 12px; padding: 0 16px; white-space: nowrap; overflow: hidden; animation: drop .35s ease-out; }
+.lines li:nth-child(n+6) { opacity: .55; }
+.lines li:nth-child(n+8) { opacity: .25; }
+.lines .t { color: var(--faint); }
+.lines .e { color: var(--ink); min-width: 7.5em; }
+.lines .hot { color: var(--hot); background: color-mix(in srgb, var(--hot) 10%, transparent); }
+.lines .hot .e { color: var(--hot); font-weight: 500; }
+.lines .catch, .lines .done b { margin-left: auto; font-family: "IBM Plex Sans KR", sans-serif; font-size: 12px; font-weight: 600; }
+.lines li > span:nth-child(3) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lines .catch { flex: none; align-self: center; padding: 0 10px; line-height: 22px; border: 1px solid var(--hot); border-radius: 11px;
+                background: var(--bg); color: var(--hot); cursor: pointer; }
+.lines .catch:hover { background: var(--hot); color: var(--bg); }
+.lines .done { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.lines .done .e { color: var(--accent); }
+.stream header .fake { margin-left: auto; font-size: 12px; color: var(--faint); }
+@keyframes drop { from { opacity: 0; transform: translateY(-8px); } }
+.stream figcaption { display: flex; gap: 16px; padding: 10px 16px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--faint); }
+.stream figcaption b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+.stream figcaption em { margin-left: auto; font-style: normal; color: var(--accent); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .lines li, .stream header i { animation: none; } }
+@media (max-width: 860px) { .hero .wrap { grid-template-columns: minmax(0, 1fr); gap: 40px; } .lines { height: calc(6 * 30px + 20px); } }
+
+/* 기술 칩: 아이콘은 브랜드 색. 배경과 붙는 색(아주 어둡거나 밝은 것)은 글자색으로 바꾼다 */
+.stack { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.ti { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; font-size: 14px; line-height: 18px;
+      border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.ti svg { width: 16px; height: 16px; flex: none; fill: var(--c); }
+.ti .ab { width: 16px; height: 16px; flex: none; display: grid; place-items: center; border-radius: 4px;
+          background: var(--tint); color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; }
+.ti small { color: var(--faint); font-size: 12px; }
+a.ti:hover { text-decoration: none; border-color: color-mix(in srgb, var(--c, var(--faint)) 60%, var(--rule)); }
+:is(.ti, .sk).hi svg { fill: color-mix(in srgb, var(--c) 55%, #000); }
+@media (prefers-color-scheme: dark) { :is(.ti, .sk).lo svg { fill: var(--ink); } :is(.ti, .sk).hi svg { fill: var(--c); } }
+.skills { padding: 0 0 24px; }
+.skills h2 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+.skills p { margin: 0 0 16px; font-size: 14px; color: var(--faint); }
+.item .stack, .detail .stack { margin-top: 4px; padding-left: 0; }
+.item .stack .ti, .detail .stack .ti { font-size: 13.5px; padding: 4px 10px 4px 8px; }
+.cv .lab { display: block; font-weight: 600; color: var(--ink); margin: 0 0 8px; }
+.cv li:has(> .stack) { list-style: none; margin: 0 0 18px; }
+.cv ul:has(> li > .stack) { padding-left: 0; }
+.cv table { border-collapse: collapse; margin: 0 0 28px; }
+.cv th, .cv td { padding: 8px 28px 8px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+.cv th { font-weight: 600; color: var(--muted); font-size: 14px; }
+.cv th:last-child, .cv td:last-child { padding-right: 0; }
+.cv td:first-child { white-space: nowrap; }
+
+.block { padding: 24px 0 96px; }
+.block > .wrap > h2, .ptitle { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 72px 0 0; padding-bottom: 16px; border-bottom: 2px solid var(--ink); }
+.block > .wrap > h2:first-child { margin-top: 0; }
+.ptitle { font-size: clamp(32px, 5vw, 44px); margin-top: 72px; }
+.lead { color: var(--muted); margin: 16px 0 8px; }
+
+.row { display: grid; grid-template-columns: 240px 1fr; gap: 40px; padding-top: 40px; }
+.side h3 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.4; }
+.side p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+@media (min-width: 721px) { .side { position: sticky; top: 88px; align-self: start; } }
+.item { padding-bottom: 48px; margin-bottom: 48px; border-bottom: 1px solid var(--rule); }
+.item:last-child { border-bottom: 0; margin-bottom: 0; }
+.item h3 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.4; }
+.item h3 a { color: var(--ink); }
+.when { margin: 6px 0 0; color: var(--faint); font-size: 14px; }
+.desc { margin: 14px 0 0; font-size: 17px; color: var(--ink); }
+.item h4 { margin: 22px 0 6px; font-size: 15px; font-weight: 700; }
+.item ul { margin: 0; padding-left: 1.1em; }
+.item li { margin: 3px 0; }
+.item li::marker { color: var(--faint); }
+.subs { margin: 14px 0 0; font-size: 15px; color: var(--muted); }
+.go { display: inline-block; margin-top: 20px; font-size: 15px; font-weight: 600; }
+.items.wide { padding-top: 40px; }
+.gantt { padding-top: 32px; font-size: 14px; }
+.gantt ol { list-style: none; margin: 0; padding: 0; }
+.gantt li, .gaxis { display: grid; grid-template-columns: 240px 1fr; gap: 16px; align-items: center; }
+.gantt li { height: 26px; }
+.gantt .gt { position: relative; height: 100%; }
+.gaxis { height: 24px; color: var(--faint); font-family: var(--mono); font-size: 12px; }
+.gaxis .gt { grid-column: 2; }
+.gaxis .gt span { position: absolute; transform: translateX(-50%); }
+.gaxis .gt span:first-child { transform: none; }
+.gl { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb { position: absolute; top: 8px; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 28%, var(--bg)); }
+.gantt li.on .gl, .gantt li.co .gl { color: var(--ink); font-weight: 600; }
+.gantt li.on .gb { background: var(--accent); }
+.gantt li.co { height: 34px; border-bottom: 1px solid var(--rule); margin-bottom: 6px; }
+.gantt li.co .gb { top: 11px; height: 12px; background: var(--ink); }
+.gantt a.gb:hover { filter: brightness(1.15); }
+.gsub { margin: 16px 0 4px; font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--rule); padding-bottom: 6px; }
+@media (max-width: 720px) { .gantt li, .gaxis { grid-template-columns: 120px 1fr; gap: 10px; } .gantt { font-size: 13px; } }
+.more { margin: 24px 0 0; padding: 20px 24px; background: var(--tint); border-radius: 12px; font-weight: 600; }
+@media (max-width: 720px) { .row { grid-template-columns: 1fr; gap: 20px; } .item h3 { font-size: 21px; } .hero { padding: 56px 0 48px; } }
+
+.plist { list-style: none; padding: 0; margin: 8px 0 0; }
+.plist > li { padding: 26px 0; border-bottom: 1px solid var(--rule); }
+.plist .ph { display: flex; align-items: baseline; gap: 10px; }
+.plist .pt { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.45; color: var(--ink); }
+.plist .feat { font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.plist .oper { margin-left: auto; padding-left: 16px; font-size: 13px; color: var(--faint); white-space: nowrap; }
+.plist .oone { margin: 4px 0 12px; font-size: 15px; line-height: 1.65; color: var(--muted); }
+.plist .stack .ti { font-size: 13px; padding: 3px 9px 3px 7px; }
+.plist .ti.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+@media (max-width: 720px) { .plist .ph { flex-wrap: wrap; } .plist .oper { margin-left: 0; padding-left: 0; width: 100%; } }
+.empty { color: var(--muted); padding-top: 32px; }
+
+.filters { display: flex; flex-direction: column; gap: 14px; margin: 28px 0 0; padding-bottom: 20px; border-bottom: 1px solid var(--rule); }
+.filters[hidden] { display: none; }
+button.ti { font: inherit; font-size: 13.5px; line-height: 18px; padding: 5px 11px 5px 8px; cursor: pointer; }
+button.ti:hover { border-color: color-mix(in srgb, var(--c, var(--faint)) 60%, var(--rule)); }
+button.ti[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+button.ti[aria-pressed="true"] svg { fill: var(--bg); }
+button.ti[aria-pressed="true"] small { color: inherit; opacity: .7; }
+.filters .folded li:nth-child(n+19) { display: none; }
+.linkish { font: inherit; font-size: 14px; padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
+.linkish:hover { text-decoration: underline; text-underline-offset: 3px; }
+.linkish[hidden] { display: none; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; color: var(--muted); }
+.controls label { display: inline-flex; align-items: center; gap: 8px; }
+.controls select { font: inherit; max-width: 60vw; color: var(--ink); background: var(--bg);
+                   border: 1px solid var(--rule); border-radius: 8px; padding: 5px 8px; }
+.controls input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.count { margin-left: auto; color: var(--faint); }
+
+.sgroup { margin-top: 56px; }
+.sgroup:first-of-type { margin-top: 40px; }
+.sgroup h2 { font-size: 19px; font-weight: 700; margin: 0; padding-bottom: 12px; border-bottom: 2px solid var(--ink); }
+.skillset { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 32px; }
+.sk { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--rule); color: var(--ink); font-size: 15.5px; }
+a.sk:hover { text-decoration: none; }
+a.sk:hover span.n { text-decoration: underline; text-underline-offset: 3px; }
+.sk svg { width: 22px; height: 22px; flex: none; fill: var(--c); }
+.sk .ab { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 5px;
+          background: var(--tint); color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1; }
+.stars { margin-left: auto; font-size: 14px; letter-spacing: 2px; color: var(--accent); white-space: nowrap; }
+.stars i { font-style: normal; color: var(--rule); }
+@media (max-width: 860px) { .skillset { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .skillset { grid-template-columns: minmax(0, 1fr); } }
+
+</style>
+</head>
+<body>
+
+<header class="site"><div class="wrap"><a class="brand" href="../index.html">정재윤</a><nav><a href="../index.html">소개</a><a href="../projects.html" aria-current="page">프로젝트</a><a href="../stack.html">기술</a><a href="../cv.html">이력</a></nav></div></header>
+<main class="detail"><div class="wrap narrow">
+  <h1>Orca Lake 클러스터 로그 수집과 신규 IDC 수집 전환</h1>
+  <p class="intro">표준 없이 흩어져 있던 Orca Lake 클러스터 로그를 서비스별로 검색하고 알림받게 만든 수집 체계</p>
+  <dl class="facts"><div><dt>기간</dt><dd>2026</dd></div><div><dt>역할</dt><dd>단독 (ILM 정책, Vector 규칙, 사내 ELK 운영은 인프라팀)</dd></div></dl>
+  <ul class="stack"><li><span class="ti" style="--c:#005571"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.625 0v15h8.25a7.5 7.5 0 0 0 0-15zm17.016 11.705c-1.571 3.261-4.91 5.517-8.766 5.517h-8.25V24h11.25a7.5 7.5 0 0 0 5.766-12.295z"/></svg>Filebeat</span></li><li><span class="ti lo" style="--c:#231F20"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.71 2.136a1.43 1.43 0 0 0-2.047 0h-.007a1.48 1.48 0 0 0-.421 1.042c0 .41.161.777.422 1.039l.007.007c.257.264.616.426 1.019.426.404 0 .766-.162 1.027-.426l.003-.007c.261-.262.421-.629.421-1.039 0-.408-.159-.777-.421-1.042H9.71zM8.683 22.295c.404 0 .766-.167 1.027-.429l.003-.008c.261-.261.421-.631.421-1.036 0-.41-.159-.778-.421-1.044H9.71a1.42 1.42 0 0 0-1.027-.432 1.4 1.4 0 0 0-1.02.432h-.007c-.26.266-.422.634-.422 1.044 0 .406.161.775.422 1.036l.007.008c.258.262.617.429 1.02.429zm7.89-4.462c.359-.096.683-.33.882-.684l.027-.052a1.47 1.47 0 0 0 .114-1.067 1.454 1.454 0 0 0-.675-.896l-.021-.014a1.425 1.425 0 0 0-1.078-.132c-.36.091-.684.335-.881.686-.2.349-.241.75-.146 1.119.099.363.33.691.675.896h.002c.346.203.737.239 1.101.144zm-6.405-7.342a2.083 2.083 0 0 0-1.485-.627c-.58 0-1.103.242-1.482.627-.378.385-.612.916-.612 1.507s.233 1.124.612 1.514a2.08 2.08 0 0 0 2.967 0c.379-.39.612-.923.612-1.514s-.233-1.122-.612-1.507zm-.835-2.51c.843.141 1.6.552 2.178 1.144h.004c.092.093.182.196.265.299l1.446-.851a3.176 3.176 0 0 1-.047-1.808 3.149 3.149 0 0 1 1.456-1.926l.025-.016a3.062 3.062 0 0 1 2.345-.306c.77.21 1.465.721 1.898 1.482v.002c.431.757.518 1.626.313 2.408a3.145 3.145 0 0 1-1.456 1.928l-.198.118h-.02a3.095 3.095 0 0 1-2.154.201 3.127 3.127 0 0 1-1.514-.944l-1.444.848a4.162 4.162 0 0 1 0 2.879l1.444.846c.413-.47.939-.789 1.514-.944a3.041 3.041 0 0 1 2.371.319l.048.023v.002a3.17 3.17 0 0 1 1.408 1.906 3.215 3.215 0 0 1-.313 2.405l-.026.053-.003-.005a3.147 3.147 0 0 1-1.867 1.436 3.096 3.096 0 0 1-2.371-.318v-.006a3.156 3.156 0 0 1-1.456-1.927 3.175 3.175 0 0 1 .047-1.805l-1.446-.848a3.905 3.905 0 0 1-.265.294l-.004.005a3.938 3.938 0 0 1-2.178 1.138v1.699a3.09 3.09 0 0 1 1.56.862l.002.004c.565.572.914 1.368.914 2.243 0 .873-.35 1.664-.914 2.239l-.002.009a3.1 3.1 0 0 1-2.21.931 3.1 3.1 0 0 1-2.206-.93h-.002v-.009a3.186 3.186 0 0 1-.916-2.239c0-.875.35-1.672.916-2.243v-.004h.002a3.1 3.1 0 0 1 1.558-.862v-1.699a3.926 3.926 0 0 1-2.176-1.138l-.006-.005a4.098 4.098 0 0 1-1.173-2.874c0-1.122.452-2.136 1.173-2.872h.006a3.947 3.947 0 0 1 2.176-1.144V6.289a3.137 3.137 0 0 1-1.558-.864h-.002v-.004a3.192 3.192 0 0 1-.916-2.243c0-.871.35-1.669.916-2.243l.002-.002A3.084 3.084 0 0 1 8.683 0c.861 0 1.641.355 2.21.932v.002h.002c.565.574.914 1.372.914 2.243 0 .876-.35 1.667-.914 2.243l-.002.005a3.142 3.142 0 0 1-1.56.864v1.692zm8.121-1.129l-.012-.019a1.452 1.452 0 0 0-.87-.668 1.43 1.43 0 0 0-1.103.146h.002c-.347.2-.58.529-.677.896-.095.365-.054.768.146 1.119l.007.009c.2.347.519.579.874.673.357.103.755.059 1.098-.144l.019-.009a1.47 1.47 0 0 0 .657-.885 1.493 1.493 0 0 0-.141-1.118"/></svg>Kafka</span></li><li><span class="ti" style="--c:#005571"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.745 24h8.291v-9.164h-8.29zm-2.618 0h.437v-9.164h-9.6A9.163 9.163 0 0011.127 24m.438-9.164h-9.6V0h.873a8.727 8.727 0 018.727 8.727z"/></svg>Logstash</span></li><li><span class="ti" style="--c:#005EB8"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.1515 8.8125a.8484.8484 0 0 0-.8484.8485c0 6.982-5.6601 12.6421-12.6421 12.6421a.8485.8485 0 0 0 0 1.6969C17.5802 24 24 17.5802 24 9.661a.8485.8485 0 0 0-.8485-.8485Zm-5.121 5.4375c.816-1.3311 1.6051-3.1058 1.4498-5.5905-.3216-5.1468-4.9832-9.0512-9.3851-8.6281C8.372.1971 6.6025 1.6017 6.7598 4.1177c.0683 1.0934.6034 1.7386 1.473 2.2348.8279.4722 1.8914.7713 3.097 1.1104 1.4563.4096 3.1455.8697 4.4438 1.8265 1.5561 1.1467 2.6198 2.4759 2.2569 4.9606Zm-16.561-9C.6535 6.581-.1355 8.3558.0197 10.8405c.3216 5.1468 4.9832 9.0512 9.385 8.6281 1.7233-.1657 3.4927-1.5703 3.3355-4.0863-.0683-1.0934-.6034-1.7386-1.4731-2.2348-.8278-.4722-1.8913-.7713-3.0969-1.1104-1.4563-.4096-3.1455-.8697-4.4438-1.8265-1.5561-1.1467-2.6198-2.476-2.257-4.9606Z"/></svg>OpenSearch(파일럿)</span></li><li><span class="ti" style="--c:#005571"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.394 0C8.683 0 4.609 2.716 2.644 6.667h15.641a4.77 4.77 0 0 0 3.073-1.11c.446-.375.864-.785 1.247-1.243l.001-.002A11.974 11.974 0 0 0 13.394 0zM1.804 8.889a12.009 12.009 0 0 0 0 6.222h14.7a3.111 3.111 0 1 0 0-6.222zm.84 8.444C4.61 21.283 8.684 24 13.395 24c3.701 0 7.011-1.677 9.212-4.312l-.001-.002a9.958 9.958 0 0 0-1.247-1.243 4.77 4.77 0 0 0-3.073-1.11z"/></svg>Elasticsearch</span></li><li><span class="ti" style="--c:#005571"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.625 0v21.591L21.375 0zm10.864 12.47L3.477 24h17.522a18.755 18.755 0 0 0-7.51-11.53z"/></svg>Kibana</span></li><li><span class="ti"><span class="ab" aria-hidden="true">V</span>Vector</span></li><li><span class="ti" style="--c:#2496ED"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.185.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.185.185.186m-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.887c0 .102.084.185.186.186m5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185m-2.964 0h2.119a.185.185 0 00.185-.185V9.006a.185.185 0 00-.184-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185m-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.082.185.185.185M23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288Z"/></svg>Docker</span></li></ul>
+  
+  <div class="prose"><h2>무엇을</h2>
+<p>Orca Lake 클러스터에서 Ambari가 관리하는 서비스와 따로 설치한 Ranger·Trino·Docker 등의 로그를 Filebeat → Kafka → Elasticsearch로 모았습니다. 2026년 가을에는 신규 IDC 서버군으로 같은 수집을 넓혔습니다.</p>
+<h2>왜</h2>
+<p>Ambari 내부 서비스와 따로 설치한 서비스의 로그를 같은 기준으로 검색하거나 감시할 방법이 없었습니다.</p>
+<h2>어떻게</h2>
+<ul>
+<li>표준 없이 흩어진 클러스터 로그를 Filebeat → Kafka → Elasticsearch로 수집, 서비스별 검색과 ERROR 폭증·수집 중단 알림 구성<ul>
+<li>자체 파일럿(Filebeat → Kafka → Logstash → OpenSearch)에서 Kafka Connect 커넥터가 OpenSearch와 호환되지 않아 Logstash로 교체</li>
+<li>운영 부담을 줄이려고 인프라팀이 운영하는 사내 ELK로 이관, 서비스별 데이터스트림·ingest pipeline·인덱스 템플릿으로 재구성</li>
+<li>서비스별로 흩어져 쓰기 불편하던 상세 대시보드를 클러스터 개요와 감사 2개로 정리</li>
+</ul>
+</li>
+<li>신규 IDC 이전 시 수집 설정을 되돌리는 대신 ES 파이프라인을 맞춰 기존 이름 유지<ul>
+<li>새 배포 구조는 서비스와 컴포넌트를 나눠 보내는데, 기존 ingest pipeline 58개와 템플릿은 합친 이름 기준</li>
+<li>두 필드를 결합하면 입력 33종 중 23종이 기존 이름 그대로라 이름 변경 6종과 신규 4종만 대응</li>
+<li>데이터스트림 이름을 정하는 주체를 Filebeat, ingest pipeline, 인덱스 템플릿 순으로 배제한 뒤 인프라팀 확인으로 Kafka와 ES 사이의 Vector임을 특정, 명명 규칙 변경은 요청 당일 적용</li>
+<li>API 키 권한을 조회해 템플릿·파이프라인은 본인, ILM 정책과 Vector 규칙은 인프라팀으로 작업 경계 확정</li>
+</ul>
+</li>
+<li>특정 서비스 로그 누락 추적으로 2자리 연도 날짜 파싱 실패 → ES 문서 거부로 조용히 유실되던 버그 발견</li>
+<li>수집량은 근거가 있는 것만 제외: JupyterHub 로그의 약 95%가 헬스체크·프록시 점검 DEBUG라 그 3종만 제외, 근거가 부족한 HDFS 감사 로그와 블록 삭제 로그는 남기고 추이 관찰</li>
+</ul>
+<h2>결과</h2>
+<ul>
+<li>Orca Lake 10여 대 전 노드의 로그를 서비스별로 검색하고, ERROR 폭증과 수집 중단을 알림으로 받는 상태</li>
+<li>신규 IDC 서버군 수집은 기존 이름을 유지하는 쪽으로 전환, 오래 걸리던 순차 배포에 병렬 잡 추가(8대 시험 배포 완료)</li>
+<li>남은 일: 명명 규칙을 바꾸면서 구 설정으로 보내던 Orca Lake 쪽에 접두어가 겹친 스트림 22개(천만 건 규모)가 생겨, 30일 보존 기간 동안 파싱되지 않는 손실을 기록으로 남김. Orca Lake 전환은 템플릿 생성 스크립트까지만 준비</li>
+</ul></div>
+  <nav class="pager"><a href="p14-lake-%EA%B6%8C%ED%95%9C.html"><small>이전</small>Orca Lake 데이터 접근 권한 체계</a><a class="next" href="p16-%EB%B0%B8%EB%9F%B0%EC%8A%A4-%EC%A7%80%ED%91%9C.html"><small>다음</small>밸런스 지표 주간 추출과 대용량 다운로드 개선</a></nav>
+</div></main>
+<footer class="site"><div class="wrap">정재윤 · wodbs603@naver.com</div></footer>
+</body>
+</html>

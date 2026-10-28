@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실 공용 빌드·배포 파이프라인 · 정재윤</title>
+<meta name="description" content="실(室)의 모든 팀이 빌드·배포 설정을 나에게 요청하지 않고 직접 할 수 있게 다시 세운 공용 파이프라인">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+:root {
+  --bg: #ffffff; --ink: #191f28; --body: #333d4b; --muted: #6b7684; --faint: #8b95a1;
+  --rule: #e5e8eb; --tint: #f2f4f6; --accent: #0f766e; --hot: #c92a52;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --wrap: 1000px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #101418; --ink: #f2f4f6; --body: #d1d6db; --muted: #a0a8b2; --faint: #7a838e;
+          --rule: #262c33; --tint: #181d22; --accent: #3fb8aa; --hot: #ff6b8e; }
+}
+* { box-sizing: border-box; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--bg); color: var(--body);
+       font-family: "IBM Plex Sans KR", -apple-system, "Apple SD Gothic Neo", sans-serif;
+       line-height: 1.75; word-break: keep-all; overflow-wrap: anywhere; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 32px; }
+.wrap.narrow { max-width: 760px; }
+@media (max-width: 720px) { .wrap { padding: 0 16px; } }
+.preview { font-size: 12px; text-align: center; padding: 6px 16px; background: var(--tint); color: var(--muted); }
+h1, h2, h3, h4 { color: var(--ink); }
+
+header.site { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent);
+              backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
+header.site .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.brand { font-weight: 700; color: var(--ink); line-height: 56px; }
+.brand:hover { text-decoration: none; }
+header.site nav { display: flex; gap: 24px; font-size: 15px; }
+header.site nav a { color: var(--muted); line-height: 54px; border-bottom: 2px solid transparent; }
+header.site nav a:hover { color: var(--ink); text-decoration: none; }
+header.site nav a[aria-current="page"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+
+.hero { padding: 88px 0 72px; }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 56px; align-items: center; }
+.hero h1 { margin: 0 0 32px; font-size: clamp(34px, 4.8vw, 50px); line-height: 1.3; font-weight: 700; letter-spacing: -0.03em; }
+.intro { font-size: 18px; line-height: 1.85; max-width: 38em; margin: 0 0 32px; }
+.contact { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 10px 28px; font-size: 15px; }
+.contact a { display: inline-flex; align-items: center; gap: 8px; color: var(--body); }
+.contact svg { width: 18px; height: 18px; color: var(--muted); }
+
+
+/* 첫 화면 오른쪽: 가상의 게임 로그가 흐르다 튀는 값이 섞이면 [잡기] 단추가 붙는다. 잡은·놓친 수를 아래에 센다 */
+.stream { margin: 0; border: 1px solid var(--rule); border-radius: 14px; background: var(--tint); overflow: hidden; }
+.stream header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--rule);
+                 font-size: 13px; color: var(--muted); }
+.stream header i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: beat 2s ease-in-out infinite; }
+@keyframes beat { 50% { opacity: .25; } }
+.lines { list-style: none; margin: 0; padding: 10px 0; height: calc(8 * 30px + 20px); overflow: hidden;
+         font-family: var(--mono); font-size: 12px; line-height: 30px; color: var(--muted); }
+.lines li { display: flex; gap: 12px; padding: 0 16px; white-space: nowrap; overflow: hidden; animation: drop .35s ease-out; }
+.lines li:nth-child(n+6) { opacity: .55; }
+.lines li:nth-child(n+8) { opacity: .25; }
+.lines .t { color: var(--faint); }
+.lines .e { color: var(--ink); min-width: 7.5em; }
+.lines .hot { color: var(--hot); background: color-mix(in srgb, var(--hot) 10%, transparent); }
+.lines .hot .e { color: var(--hot); font-weight: 500; }
+.lines .catch, .lines .done b { margin-left: auto; font-family: "IBM Plex Sans KR", sans-serif; font-size: 12px; font-weight: 600; }
+.lines li > span:nth-child(3) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lines .catch { flex: none; align-self: center; padding: 0 10px; line-height: 22px; border: 1px solid var(--hot); border-radius: 11px;
+                background: var(--bg); color: var(--hot); cursor: pointer; }
+.lines .catch:hover { background: var(--hot); color: var(--bg); }
+.lines .done { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.lines .done .e { color: var(--accent); }
+.stream header .fake { margin-left: auto; font-size: 12px; color: var(--faint); }
+@keyframes drop { from { opacity: 0; transform: translateY(-8px); } }
+.stream figcaption { display: flex; gap: 16px; padding: 10px 16px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--faint); }
+.stream figcaption b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+.stream figcaption em { margin-left: auto; font-style: normal; color: var(--accent); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .lines li, .stream header i { animation: none; } }
+@media (max-width: 860px) { .hero .wrap { grid-template-columns: minmax(0, 1fr); gap: 40px; } .lines { height: calc(6 * 30px + 20px); } }
+
+/* 기술 칩: 아이콘은 브랜드 색. 배경과 붙는 색(아주 어둡거나 밝은 것)은 글자색으로 바꾼다 */
+.stack { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.ti { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; font-size: 14px; line-height: 18px;
+      border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.ti svg { width: 16px; height: 16px; flex: none; fill: var(--c); }
+.ti .ab { width: 16px; height: 16px; flex: none; display: grid; place-items: center; border-radius: 4px;
+          background: var(--tint); color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; }
+.ti small { color: var(--faint); font-size: 12px; }
+a.ti:hover { text-decoration: none; border-color: color-mix(in srgb, var(--c, var(--faint)) 60%, var(--rule)); }
+:is(.ti, .sk).hi svg { fill: color-mix(in srgb, var(--c) 55%, #000); }
+@media (prefers-color-scheme: dark) { :is(.ti, .sk).lo svg { fill: var(--ink); } :is(.ti, .sk).hi svg { fill: var(--c); } }
+.skills { padding: 0 0 24px; }
+.skills h2 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+.skills p { margin: 0 0 16px; font-size: 14px; color: var(--faint); }
+.item .stack, .detail .stack { margin-top: 4px; padding-left: 0; }
+.item .stack .ti, .detail .stack .ti { font-size: 13.5px; padding: 4px 10px 4px 8px; }
+.cv .lab { display: block; font-weight: 600; color: var(--ink); margin: 0 0 8px; }
+.cv li:has(> .stack) { list-style: none; margin: 0 0 18px; }
+.cv ul:has(> li > .stack) { padding-left: 0; }
+.cv table { border-collapse: collapse; margin: 0 0 28px; }
+.cv th, .cv td { padding: 8px 28px 8px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+.cv th { font-weight: 600; color: var(--muted); font-size: 14px; }
+.cv th:last-child, .cv td:last-child { padding-right: 0; }
+.cv td:first-child { white-space: nowrap; }
+
+.block { padding: 24px 0 96px; }
+.block > .wrap > h2, .ptitle { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 72px 0 0; padding-bottom: 16px; border-bottom: 2px solid var(--ink); }
+.block > .wrap > h2:first-child { margin-top: 0; }
+.ptitle { font-size: clamp(32px, 5vw, 44px); margin-top: 72px; }
+.lead { color: var(--muted); margin: 16px 0 8px; }
+
+.row { display: grid; grid-template-columns: 240px 1fr; gap: 40px; padding-top: 40px; }
+.side h3 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.4; }
+.side p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+@media (min-width: 721px) { .side { position: sticky; top: 88px; align-self: start; } }
+.item { padding-bottom: 48px; margin-bottom: 48px; border-bottom: 1px solid var(--rule); }
+.item:last-child { border-bottom: 0; margin-bottom: 0; }
+.item h3 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.4; }
+.item h3 a { color: var(--ink); }
+.when { margin: 6px 0 0; color: var(--faint); font-size: 14px; }
+.desc { margin: 14px 0 0; font-size: 17px; color: var(--ink); }
+.item h4 { margin: 22px 0 6px; font-size: 15px; font-weight: 700; }
+.item ul { margin: 0; padding-left: 1.1em; }
+.item li { margin: 3px 0; }
+.item li::marker { color: var(--faint); }
+.subs { margin: 14px 0 0; font-size: 15px; color: var(--muted); }
+.go { display: inline-block; margin-top: 20px; font-size: 15px; font-weight: 600; }
+.items.wide { padding-top: 40px; }
+.gantt { padding-top: 32px; font-size: 14px; }
+.gantt ol { list-style: none; margin: 0; padding: 0; }
+.gantt li, .gaxis { display: grid; grid-template-columns: 240px 1fr; gap: 16px; align-items: center; }
+.gantt li { height: 26px; }
+.gantt .gt { position: relative; height: 100%; }
+.gaxis { height: 24px; color: var(--faint); font-family: var(--mono); font-size: 12px; }
+.gaxis .gt { grid-column: 2; }
+.gaxis .gt span { position: absolute; transform: translateX(-50%); }
+.gaxis .gt span:first-child { transform: none; }
+.gl { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb { position: absolute; top: 8px; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 28%, var(--bg)); }
+.gantt li.on .gl, .gantt li.co .gl { color: var(--ink); font-weight: 600; }
+.gantt li.on .gb { background: var(--accent); }
+.gantt li.co { height: 34px; border-bottom: 1px solid var(--rule); margin-bottom: 6px; }
+.gantt li.co .gb { top: 11px; height: 12px; background: var(--ink); }
+.gantt a.gb:hover { filter: brightness(1.15); }
+.gsub { margin: 16px 0 4px; font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--rule); padding-bottom: 6px; }
+@media (max-width: 720px) { .gantt li, .gaxis { grid-template-columns: 120px 1fr; gap: 10px; } .gantt { font-size: 13px; } }
+.more { margin: 24px 0 0; padding: 20px 24px; background: var(--tint); border-radius: 12px; font-weight: 600; }
+@media (max-width: 720px) { .row { grid-template-columns: 1fr; gap: 20px; } .item h3 { font-size: 21px; } .hero { padding: 56px 0 48px; } }
+
+.plist { list-style: none; padding: 0; margin: 8px 0 0; }
+.plist > li { padding: 26px 0; border-bottom: 1px solid var(--rule); }
+.plist .ph { display: flex; align-items: baseline; gap: 10px; }
+.plist .pt { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.45; color: var(--ink); }
+.plist .feat { font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.plist .oper { margin-left: auto; padding-left: 16px; font-size: 13px; color: var(--faint); white-space: nowrap; }
+.plist .oone { margin: 4px 0 12px; font-size: 15px; line-height: 1.65; color: var(--muted); }
+.plist .stack .ti { font-size: 13px; padding: 3px 9px 3px 7px; }
+.plist .ti.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+@media (max-width: 720px) { .plist .ph { flex-wrap: wrap; } .plist .oper { margin-left: 0; padding-left: 0; width: 100%; } }
+.empty { color: var(--muted); padding-top: 32px; }
+
+.filters { display: flex; flex-direction: column; gap: 14px; margin: 28px 0 0; padding-bottom: 20px; border-bottom: 1px solid var(--rule); }
+.filters[hidden] { display: none; }
+button.ti { font: inherit; font-size: 13.5px; line-height: 18px; padding: 5px 11px 5px 8px; cursor: pointer; }
+button.ti:hover { border-color: color-mix(in srgb, var(--c, var(--faint)) 60%, var(--rule)); }
+button.ti[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+button.ti[aria-pressed="true"] svg { fill: var(--bg); }
+button.ti[aria-pressed="true"] small { color: inherit; opacity: .7; }
+.filters .folded li:nth-child(n+19) { display: none; }
+.linkish { font: inherit; font-size: 14px; padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
+.linkish:hover { text-decoration: underline; text-underline-offset: 3px; }
+.linkish[hidden] { display: none; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; color: var(--muted); }
+.controls label { display: inline-flex; align-items: center; gap: 8px; }
+.controls select { font: inherit; max-width: 60vw; color: var(--ink); background: var(--bg);
+                   border: 1px solid var(--rule); border-radius: 8px; padding: 5px 8px; }
+.controls input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.count { margin-left: auto; color: var(--faint); }
+
+.sgroup { margin-top: 56px; }
+.sgroup:first-of-type { margin-top: 40px; }
+.sgroup h2 { font-size: 19px; font-weight: 700; margin: 0; padding-bottom: 12px; border-bottom: 2px solid var(--ink); }
+.skillset { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 32px; }
+.sk { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--rule); color: var(--ink); font-size: 15.5px; }
+a.sk:hover { text-decoration: none; }
+a.sk:hover span.n { text-decoration: underline; text-underline-offset: 3px; }
+.sk svg { width: 22px; height: 22px; flex: none; fill: var(--c); }
+.sk .ab { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 5px;
+          background: var(--tint); color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1; }
+.stars { margin-left: auto; font-size: 14px; letter-spacing: 2px; color: var(--accent); white-space: nowrap; }
+.stars i { font-style: normal; color: var(--rule); }
+@media (max-width: 860px) { .skillset { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .skillset { grid-template-columns: minmax(0, 1fr); } }
+
+</style>
+</head>
+<body>
+
+<header class="site"><div class="wrap"><a class="brand" href="../index.html">정재윤</a><nav><a href="../index.html">소개</a><a href="../projects.html" aria-current="page">프로젝트</a><a href="../stack.html">기술</a><a href="../cv.html">이력</a></nav></div></header>
+<main class="detail"><div class="wrap narrow">
+  <h1>실 공용 빌드·배포 파이프라인</h1>
+  <p class="intro">실(室)의 모든 팀이 빌드·배포 설정을 나에게 요청하지 않고 직접 할 수 있게 다시 세운 공용 파이프라인</p>
+  <dl class="facts"><div><dt>기간</dt><dd>2019 ~ 현재</dd></div><div><dt>역할</dt><dd>단독</dd></div></dl>
+  <ul class="stack"><li><span class="ti" style="--c:#D24939"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.872 24h-.975a3.866 3.866 0 01-.07-.197c-.215-.666-.594-1.49-.692-2.154-.146-.984.78-1.039 1.374-1.465.915-.66 1.635-1.025 2.627-1.62.295-.179 1.182-.624 1.281-.829.201-.408-.345-.982-.49-1.3-.225-.507-.345-.937-.376-1.435-.824-.13-1.455-.627-1.844-1.185-.63-.925-1.066-2.635-.525-3.936.045-.103.254-.305.285-.463.06-.308-.105-.72-.12-1.048-.06-1.692.284-3.15 1.425-3.66.463-1.84 2.113-2.453 3.673-3.367.58-.342 1.224-.562 1.89-.807 2.372-.877 6.027-.712 7.994.783.836.633 2.176 1.97 2.656 2.939 1.262 2.555 1.17 6.825.287 9.934-.12.421-.29 1.032-.533 1.533-.168.35-.689 1.05-.625 1.36.064.314 1.19 1.17 1.432 1.395.434.422 1.26.975 1.324 1.5.07.557-.248 1.336-.41 1.875-.217.721-.436 1.441-.654 2.131H2.87zm11.104-3.54c-.545-.3-1.361-.622-2.065-.757-.87-.164-.78 1.188-.75 1.994.03.643.36 1.316.51 1.744.076.197.09.41.256.449.3.068 1.29-.326 1.575-.479.6-.328 1.064-.844 1.574-1.189.016-.17.016-.34.03-.508a2.648 2.648 0 00-1.095-.277c.314-.15.75-.15 1.035-.332l.016-.193c-.496-.03-.69-.254-1.021-.436zm7.454 2.935a17.78 17.78 0 00.465-1.752c.06-.287.215-.918.178-1.176-.059-.459-.684-.799-1.004-1.086-.584-.525-.95-.975-1.56-1.469-.249.375-.78.615-.983.914 1.447-.689 1.71 2.625 1.141 3.69.09.329.391.45.514.735l-.086.166h1.29c.013 0 .03 0 .044.014zm-6.634-.012c-.05-.074-.1-.135-.15-.209l-.301.195h.45zm2.77 0c.008-.209.018-.404.03-.598-.53.029-.825-.48-1.196-.527-.324-.045-.6.361-1.02.195-.095.105-.183.227-.284.316.154.18.295.375.424.584h.815c.014-.164.135-.285.3-.285.165 0 .284.121.284.27h.66zm2.116 0c-.314-.479-.947-.898-1.68-.555l-.03.541h1.71zm-8.51 0l-.104-.344c-.225-.72-.36-1.26-.405-1.68-.914-.436-1.875-.87-2.654-1.426-.15-.105-1.109-1.35-1.23-1.305-1.739.676-3.359 1.86-4.814 2.984.256.557.48 1.141.69 1.74h8.505zm8.265-2.113c-.029-.512-.164-1.56-.48-1.74-.66-.39-1.846.78-2.34.943.045.15.135.271.15.48.285-.074.645-.029.898.092-.299.03-.629.03-.824.164-.074.195.016.48-.029.764.69.197 1.5.303 2.385.332.164-.227.225-.645.211-1.082zm-4.08-.36c-.044.375.046.51.12.943 1.26.391 1.034-1.74-.135-.959zM8.76 19.5c-.45.457 1.27 1.082 1.814 1.115 0-.29.165-.564.135-.77-.65-.118-1.502-.042-1.945-.347zm5.565.215c0 .043-.061.03-.068.064.58.451 1.014.545 1.802.51.354-.262.67-.563 1.043-.807-.855.074-1.931.607-2.774.23zm3.42-17.726c-1.606-.906-4.35-1.591-6.076-.731-1.38.692-3.27 1.84-3.899 3.292.6 1.402-.166 2.686-.226 4.109-.018.757.36 1.42.391 2.242-.2.338-.825.38-1.26.356-.146-.729-.4-1.549-1.155-1.63-1.064-.116-1.845.764-1.89 1.683-.06 1.08.833 2.864 2.085 2.745.488-.046.608-.54 1.139-.54.285.57-.445.75-.523 1.154-.016.105.06.511.104.705.233.944.744 2.16 1.245 2.88.635.9 1.884 1.051 3.229 1.141.24-.525 1.125-.48 1.706-.346-.691-.27-1.336-.945-1.875-1.529-.615-.676-1.23-1.41-1.261-2.28 1.155 1.604 2.1 3 4.2 3.704 1.59.525 3.45-.254 4.664-1.109.51-.359.811-.93 1.17-1.439 1.35-1.936 1.98-4.71 1.846-7.394-.06-1.111-.06-2.221-.436-2.955-.389-.781-1.695-1.471-2.475-.781-.15-.764.63-1.23 1.545-.96-.66-.854-1.336-1.858-2.266-2.384zM13.58 14.896c.615 1.544 2.724 1.363 4.505 1.323-.084.194-.256.435-.465.515-.57.232-2.145.408-2.937-.012-.506-.27-.824-.873-1.102-1.227-.137-.172-.795-.608-.012-.609zm.164-.87c.893.464 2.52.517 3.731.48.066.267.066.593.068.913-1.55.08-3.386-.304-3.794-1.395h-.005zm6.675-.586c-.473.9-1.145 1.897-2.539 1.928-.023-.284-.045-.735 0-.904 1.064-.103 1.727-.646 2.543-1.017zm-.649-.667c-1.02.66-2.154 1.375-3.824 1.21-.351-.31-.485-1-.14-1.458.181.313.06.885.57.97.944.165 2.038-.579 2.73-.84.42-.713-.046-.976-.42-1.433-.782-.93-1.83-2.1-1.802-3.51.314-.224.346.346.391.45.404.96 1.424 2.175 2.174 3 .18.21.48.39.51.524.092.39-.254.854-.209 1.11zm-13.439-.675c-.314-.184-.393-.99-.768-1.01-.535-.03-.438 1.05-.436 1.68-.37-.33-.435-1.365-.164-1.89-.308-.15-.445.164-.618.284.22-1.59 2.34-.734 1.99.96zM4.713 5.995c-.685.756-.54 2.174-.459 3.188 1.244-.785 2.898.06 2.883 1.394.595-.016.223-.744.115-1.215-.353-1.528.592-3.187.041-4.59-1.064.084-1.939.52-2.578 1.215zm9.12 1.113c.307.562.404 1.148.84 1.57.195.19.574.424.387.95-.045.121-.365.391-.551.45-.674.195-2.254.03-1.721-.81.563.015 1.314.36 1.732-.045-.314-.524-.885-1.53-.674-2.13zm6.198-.013h.068c.33.668.6 1.375 1.004 1.965-.27.628-2.053 1.19-2.023.057.39-.17 1.05-.035 1.395-.25-.193-.556-.48-1.006-.434-1.771zm-6.927-1.617c-1.422-.33-2.131.592-2.56 1.553-.384-.094-.231-.615-.135-.883.255-.701 1.28-1.633 2.119-1.506.359.057.848.386.576.834zM9.642 1.593c-1.56.44-3.56 1.574-4.2 2.974.495-.07.84-.321 1.33-.351.186-.016.428.074.641.015.424-.104.78-1.065 1.102-1.41.31-.345.685-.496.94-.81.167-.09.409-.074.42-.33-.073-.075-.15-.135-.232-.105v.017z"/></svg>Jenkins</span></li><li><span class="ti" style="--c:#FC6D26"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z"/></svg>GitLab CI</span></li><li><span class="ti" style="--c:#404040"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.741 8.755c.164-.425.352-.834.573-1.219-.213-.196-.745-.613-.712-.646 2.774-3.322 6.391-4.32 9.59-3.74.655.09 1.31.246 1.956.483 4.583 1.702 6.898 6.75 5.18 11.284a9.33 9.33 0 0 1-.614 1.285c.254.22.81.63.778.663-3.077 3.641-7.177 4.484-10.589 3.47a11.18 11.18 0 0 1-.982-.295c-4.574-1.702-6.898-6.751-5.18-11.285zM19.371.982c-.581.556-1.277 1.227-1.62 1.53a11.886 11.886 0 0 0-1.727-.802C10.819-.221 5.337 1.964 2.317 6.03.738 8.364-.195 11.236.034 14.19c0 0 .009 5.556 5.14 8.83.417-.574.948-1.31 1.3-1.785a12.36 12.36 0 0 0 1.817.86c5.892 2.184 12.422-.606 14.557-6.228 0 0 1.563-3.428 1.048-7.176 0 0-.401-5.057-4.525-7.708z"/></svg>Perforce</span></li><li><span class="ti"><span class="ab" aria-hidden="true">P</span>PowerShell</span></li><li><span class="ti" style="--c:#2496ED"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.185.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.185.185.186m-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.887c0 .102.084.185.186.186m5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185m-2.964 0h2.119a.185.185 0 00.185-.185V9.006a.185.185 0 00-.184-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185m-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.082.185.185.185M23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288Z"/></svg>Docker</span></li><li><span class="ti" style="--c:#60B932"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7.006 15.751 4.256 1.876.066.805-4.388-1.934.066-.747zm.304-3.435h-.605V11.21h.381V8.95h-.381v-.649l2.118-2.073v-.146c0-.11.09-.2.2-.2.11 0 .2.09.2.2v.146l2.12 2.073v.65h-.382v2.259h.381v1.106h-.514l.27 3.313L7.17 13.9l.14-1.583zm.39-1.106h.628v-.965c0-.383.313-.696.695-.696s.696.313.696.696v.965h.628V8.95H7.7v2.26zM6.89 17.05l-.066.747 4.618 2.035-.066-.805-4.486-1.977zm.23-2.6-.066.747 4.158 1.832-.065-.805-4.026-1.774zM24 12c0 6.617-5.383 12-12 12S0 18.617 0 12 5.383 0 12 0s12 5.383 12 12zm-2.43-.715a9.682 9.682 0 0 0-.223-1.523l-9.751.332 8.801-2.828-.019-.037A9.802 9.802 0 0 0 19.23 5.59l-7.786 4.03 5.712-5.941a9.675 9.675 0 0 0-5.14-1.474c-5.371 0-9.74 4.369-9.74 9.74 0 3.38 1.73 6.362 4.35 8.11l.151-1.704 4.715 2.078.102 1.246c.14.006.28.01.422.01 4.646 0 8.54-3.27 9.507-7.63l-10.08-3.497 10.128.727"/></svg>Harbor</span></li><li><span class="ti" style="--c:#569A31"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.913 13.147l.12-.895c.947.576 1.258.922 1.354 1.071-.16.031-.562.046-1.474-.176zm-2.174 7.988a.547.547 0 0 0-.005.073c0 .084-.207.405-1.124.768a10.28 10.28 0 0 1-1.438.432c-1.405.325-3.128.504-4.853.504-4.612 0-7.412-1.184-7.412-1.704a.547.547 0 0 0-.005-.073L1.81 5.602c.135.078.28.154.432.227.042.02.086.038.128.057.134.062.272.122.417.18l.179.069c.154.058.314.114.478.168.043.013.084.029.13.043.207.065.423.127.646.187l.176.044c.175.044.353.087.534.127a23.414 23.414 0 0 0 .843.17l.121.023c.252.045.508.085.768.122.071.011.144.02.216.03.2.027.4.053.604.077l.24.027c.245.026.49.05.74.07l.081.009c.275.022.552.04.83.056l.233.012c.21.01.422.018.633.025a33.088 33.088 0 0 0 2.795-.026l.232-.011c.278-.016.555-.034.83-.056l.08-.008c.25-.02.497-.045.742-.072l.238-.026c.205-.024.408-.05.609-.077.07-.01.141-.019.211-.03.261-.037.519-.078.772-.122l.111-.02c.215-.04.427-.082.634-.125l.212-.047c.186-.041.368-.085.546-.13l.166-.042c.225-.06.444-.122.654-.189.04-.012.077-.026.115-.038a10.6 10.6 0 0 0 .493-.173c.058-.021.114-.044.17-.066.15-.06.293-.12.43-.185.038-.017.079-.034.116-.052.153-.073.3-.15.436-.228l-.976 7.245c-2.488-.78-5.805-2.292-7.311-3a1.09 1.09 0 0 0-1.088-1.085c-.6 0-1.088.489-1.088 1.088 0 .6.488 1.089 1.088 1.089.196 0 .378-.056.537-.148 1.72.812 5.144 2.367 7.715 3.15zm-7.42-20.047c5.677 0 9.676 1.759 9.75 2.736l-.014.113c-.01.033-.031.067-.048.101-.015.028-.026.057-.047.087-.024.033-.058.068-.09.102-.028.03-.051.06-.084.09-.038.035-.087.07-.133.105-.04.03-.074.06-.119.091-.053.036-.116.071-.177.107-.05.03-.095.06-.15.09-.068.036-.147.073-.222.11-.059.028-.114.057-.177.085-.084.038-.177.074-.268.111-.068.027-.13.054-.203.082-.097.036-.205.072-.31.107-.075.026-.148.053-.228.079-.111.035-.233.069-.35.103-.085.024-.165.05-.253.073-.124.034-.258.065-.389.098-.093.022-.181.046-.278.068-.139.032-.287.061-.433.091-.098.02-.191.041-.293.06-.155.03-.32.057-.482.084-.1.018-.198.036-.302.052-.166.026-.342.048-.515.072-.11.014-.213.03-.325.044-.181.023-.372.041-.56.06-.11.012-.218.025-.332.036-.188.016-.386.029-.58.043-.122.009-.24.02-.364.028-.207.012-.422.02-.635.028-.12.005-.234.012-.354.016a35.605 35.605 0 0 1-2.069 0c-.12-.004-.234-.011-.352-.016-.214-.008-.43-.016-.637-.028-.122-.008-.238-.02-.36-.027-.195-.015-.394-.028-.584-.044-.11-.01-.215-.024-.324-.035-.19-.02-.384-.038-.568-.06l-.315-.044c-.176-.024-.355-.046-.525-.073-.1-.015-.192-.033-.29-.05-.167-.028-.335-.055-.494-.086-.096-.018-.183-.038-.276-.056-.151-.032-.305-.062-.45-.095-.09-.02-.173-.043-.26-.064-.138-.034-.277-.067-.407-.102-.082-.022-.157-.046-.235-.069a11.75 11.75 0 0 1-.368-.108c-.075-.024-.141-.049-.213-.073-.11-.037-.223-.075-.325-.113-.067-.025-.125-.051-.188-.077-.096-.038-.195-.076-.282-.115-.06-.027-.11-.054-.166-.08-.08-.039-.162-.077-.233-.116-.052-.028-.094-.055-.142-.084-.063-.038-.13-.075-.185-.113-.043-.029-.075-.058-.113-.086-.048-.037-.098-.073-.139-.11-.032-.029-.054-.057-.08-.087-.033-.035-.069-.07-.093-.104-.02-.03-.031-.058-.046-.086-.018-.035-.039-.068-.049-.102l-.015-.113c.076-.977 4.074-2.736 9.748-2.736zm12.182 12.124c-.118-.628-.84-1.291-2.31-2.128l.963-7.16a.531.531 0 0 0 .005-.073C22.16 1.581 16.447 0 11.32 0 6.194 0 .482 1.581.482 3.851a.58.58 0 0 0 .005.072L2.819 21.25c.071 2.002 5.236 2.75 8.5 2.75 1.805 0 3.615-.188 5.098-.531.598-.138 1.133-.3 1.592-.48 1.18-.467 1.789-1.053 1.813-1.739l.945-7.018c.557.131 1.016.197 1.389.197.54 0 .902-.137 1.134-.413a.956.956 0 0 0 .21-.804Z"/></svg>AWS S3</span></li></ul>
+  
+  <div class="prose"><h2>무엇을</h2>
+<p>로스트아크 PC(국내·해외)와 모바일의 인증·로그·웹 서비스를 빌드해 개발망과 IDC망에 배포하는 파이프라인입니다. 2019년에 기존 파이프라인과 별개로 거의 새로 만들었고, 이후 국가·퍼블리셔와 클라우드 환경이 늘 때마다 넓혔습니다.</p>
+<h2>왜</h2>
+<p>실의 모든 팀이 빌드·배포 설정을 나에게 요청했습니다. 그 요청을 받지 않고 각 팀이 직접 설정할 수 있게 하려고 구조를 완전히 바꿨습니다. 환경은 개발망·IDC망마다 DEV·QA·CBT·LIVE가 있고 해외 퍼블리셔별 배포 경로가 따로 있어, IDC 환경 분리까지 함께 풀어야 했습니다.</p>
+<h2>어떻게</h2>
+<ul>
+<li>파일이 Git → 빌드 서버 → 배포 서버 → IDC망 배포 서버 → 대상 서버로 여러 번 옮겨지는 구조라, 설정 값을 뺀 최종 배포본과 빌드본을 해시로 비교하는 무결성 검증 추가</li>
+<li>cherry-pick 형상관리에서 누락 커밋이 쌓여 릴리스 때 대량 병합 충돌이 나던 것을 브랜치 주기 백업·재생성 자동화로 차단, 이후 GitLab CI로 이전</li>
+<li>Jenkins Job 안에 직접 쓰여 개발망·IDC망끼리 어긋나던 배포 스크립트를 Git으로 옮기고 배포 스크립트 전용 저장소 분리</li>
+<li>2026년 VPC 분리에 맞춰 AWS Docker 서비스 배포를 직접 SSH에서 S3 경유(대상 서버가 가져가는 방식)로 전환</li>
+</ul>
+<h2>결과</h2>
+<ul>
+<li>북미·중국·러시아 등 국가·퍼블리셔 전용 빌드와 모바일 전용 빌드 서버까지 배포 매트릭스 확장</li>
+<li>신규 IDC Docker 배포에 대수 단위로 묶는 병렬 배포 잡 추가 (기존 순차 배포가 오래 걸려 대수 단위로 묶음, 8대 시험 배포 완료)</li>
+</ul></div>
+  <nav class="pager"><a href="p05-%EC%9A%B4%EC%98%81%ED%88%B4-%ED%85%8C%EC%9D%B4%EB%B8%94-%EC%9D%B4%EA%B4%80.html"><small>이전</small>운영툴 전용 HBase 테이블 Iceberg 이관</a><a class="next" href="p07-%EB%B0%B0%ED%8F%AC%EC%84%9C%EB%B2%84-%EC%9D%B4%EC%A0%84.html"><small>다음</small>IDC 배포 서버 이전과 빌드 서버 무응답 알람</a></nav>
+</div></main>
+<footer class="site"><div class="wrap">정재윤 · wodbs603@naver.com</div></footer>
+</body>
+</html>

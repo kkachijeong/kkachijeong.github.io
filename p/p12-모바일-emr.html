@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>모바일 AWS EMR 인프라 · 정재윤</title>
+<meta name="description" content="PC판 온프레미스와 다른 AWS EMR 위에 모바일 게임로그 백엔드 전개와 백업 자동화">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+
+:root {
+  --bg: #ffffff; --ink: #191f28; --body: #333d4b; --muted: #6b7684; --faint: #8b95a1;
+  --rule: #e5e8eb; --tint: #f2f4f6; --accent: #0f766e; --hot: #c92a52;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --wrap: 1000px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #101418; --ink: #f2f4f6; --body: #d1d6db; --muted: #a0a8b2; --faint: #7a838e;
+          --rule: #262c33; --tint: #181d22; --accent: #3fb8aa; --hot: #ff6b8e; }
+}
+* { box-sizing: border-box; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--bg); color: var(--body);
+       font-family: "IBM Plex Sans KR", -apple-system, "Apple SD Gothic Neo", sans-serif;
+       line-height: 1.75; word-break: keep-all; overflow-wrap: anywhere; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 32px; }
+.wrap.narrow { max-width: 760px; }
+@media (max-width: 720px) { .wrap { padding: 0 16px; } }
+.preview { font-size: 12px; text-align: center; padding: 6px 16px; background: var(--tint); color: var(--muted); }
+h1, h2, h3, h4 { color: var(--ink); }
+
+header.site { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent);
+              backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule); }
+header.site .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.brand { font-weight: 700; color: var(--ink); line-height: 56px; }
+.brand:hover { text-decoration: none; }
+header.site nav { display: flex; gap: 24px; font-size: 15px; }
+header.site nav a { color: var(--muted); line-height: 54px; border-bottom: 2px solid transparent; }
+header.site nav a:hover { color: var(--ink); text-decoration: none; }
+header.site nav a[aria-current="page"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+
+.hero { padding: 88px 0 72px; }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 56px; align-items: center; }
+.hero h1 { margin: 0 0 32px; font-size: clamp(34px, 4.8vw, 50px); line-height: 1.3; font-weight: 700; letter-spacing: -0.03em; }
+.intro { font-size: 18px; line-height: 1.85; max-width: 38em; margin: 0 0 32px; }
+.contact { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 10px 28px; font-size: 15px; }
+.contact a { display: inline-flex; align-items: center; gap: 8px; color: var(--body); }
+.contact svg { width: 18px; height: 18px; color: var(--muted); }
+
+
+/* 첫 화면 오른쪽: 가상의 게임 로그가 흐르다 튀는 값이 섞이면 [잡기] 단추가 붙는다. 잡은·놓친 수를 아래에 센다 */
+.stream { margin: 0; border: 1px solid var(--rule); border-radius: 14px; background: var(--tint); overflow: hidden; }
+.stream header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--rule);
+                 font-size: 13px; color: var(--muted); }
+.stream header i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: beat 2s ease-in-out infinite; }
+@keyframes beat { 50% { opacity: .25; } }
+.lines { list-style: none; margin: 0; padding: 10px 0; height: calc(8 * 30px + 20px); overflow: hidden;
+         font-family: var(--mono); font-size: 12px; line-height: 30px; color: var(--muted); }
+.lines li { display: flex; gap: 12px; padding: 0 16px; white-space: nowrap; overflow: hidden; animation: drop .35s ease-out; }
+.lines li:nth-child(n+6) { opacity: .55; }
+.lines li:nth-child(n+8) { opacity: .25; }
+.lines .t { color: var(--faint); }
+.lines .e { color: var(--ink); min-width: 7.5em; }
+.lines .hot { color: var(--hot); background: color-mix(in srgb, var(--hot) 10%, transparent); }
+.lines .hot .e { color: var(--hot); font-weight: 500; }
+.lines .catch, .lines .done b { margin-left: auto; font-family: "IBM Plex Sans KR", sans-serif; font-size: 12px; font-weight: 600; }
+.lines li > span:nth-child(3) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lines .catch { flex: none; align-self: center; padding: 0 10px; line-height: 22px; border: 1px solid var(--hot); border-radius: 11px;
+                background: var(--bg); color: var(--hot); cursor: pointer; }
+.lines .catch:hover { background: var(--hot); color: var(--bg); }
+.lines .done { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.lines .done .e { color: var(--accent); }
+.stream header .fake { margin-left: auto; font-size: 12px; color: var(--faint); }
+@keyframes drop { from { opacity: 0; transform: translateY(-8px); } }
+.stream figcaption { display: flex; gap: 16px; padding: 10px 16px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--faint); }
+.stream figcaption b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+.stream figcaption em { margin-left: auto; font-style: normal; color: var(--accent); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .lines li, .stream header i { animation: none; } }
+@media (max-width: 860px) { .hero .wrap { grid-template-columns: minmax(0, 1fr); gap: 40px; } .lines { height: calc(6 * 30px + 20px); } }
+
+/* 기술 칩: 아이콘은 브랜드 색. 배경과 붙는 색(아주 어둡거나 밝은 것)은 글자색으로 바꾼다 */
+.stack { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.ti { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; font-size: 14px; line-height: 18px;
+      border: 1px solid var(--rule); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.ti svg { width: 16px; height: 16px; flex: none; fill: var(--c); }
+.ti .ab { width: 16px; height: 16px; flex: none; display: grid; place-items: center; border-radius: 4px;
+          background: var(--tint); color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; }
+.ti small { color: var(--faint); font-size: 12px; }
+a.ti:hover { text-decoration: none; border-color: color-mix(in srgb, var(--c, var(--faint)) 60%, var(--rule)); }
+:is(.ti, .sk).hi svg { fill: color-mix(in srgb, var(--c) 55%, #000); }
+@media (prefers-color-scheme: dark) { :is(.ti, .sk).lo svg { fill: var(--ink); } :is(.ti, .sk).hi svg { fill: var(--c); } }
+.skills { padding: 0 0 24px; }
+.skills h2 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+.skills p { margin: 0 0 16px; font-size: 14px; color: var(--faint); }
+.item .stack, .detail .stack { margin-top: 4px; padding-left: 0; }
+.item .stack .ti, .detail .stack .ti { font-size: 13.5px; padding: 4px 10px 4px 8px; }
+.cv .lab { display: block; font-weight: 600; color: var(--ink); margin: 0 0 8px; }
+.cv li:has(> .stack) { list-style: none; margin: 0 0 18px; }
+.cv ul:has(> li > .stack) { padding-left: 0; }
+.cv table { border-collapse: collapse; margin: 0 0 28px; }
+.cv th, .cv td { padding: 8px 28px 8px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+.cv th { font-weight: 600; color: var(--muted); font-size: 14px; }
+.cv th:last-child, .cv td:last-child { padding-right: 0; }
+.cv td:first-child { white-space: nowrap; }
+
+.block { padding: 24px 0 96px; }
+.block > .wrap > h2, .ptitle { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 72px 0 0; padding-bottom: 16px; border-bottom: 2px solid var(--ink); }
+.block > .wrap > h2:first-child { margin-top: 0; }
+.ptitle { font-size: clamp(32px, 5vw, 44px); margin-top: 72px; }
+.lead { color: var(--muted); margin: 16px 0 8px; }
+
+.row { display: grid; grid-template-columns: 240px 1fr; gap: 40px; padding-top: 40px; }
+.side h3 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.4; }
+.side p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+@media (min-width: 721px) { .side { position: sticky; top: 88px; align-self: start; } }
+.item { padding-bottom: 48px; margin-bottom: 48px; border-bottom: 1px solid var(--rule); }
+.item:last-child { border-bottom: 0; margin-bottom: 0; }
+.item h3 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.4; }
+.item h3 a { color: var(--ink); }
+.when { margin: 6px 0 0; color: var(--faint); font-size: 14px; }
+.desc { margin: 14px 0 0; font-size: 17px; color: var(--ink); }
+.item h4 { margin: 22px 0 6px; font-size: 15px; font-weight: 700; }
+.item ul { margin: 0; padding-left: 1.1em; }
+.item li { margin: 3px 0; }
+.item li::marker { color: var(--faint); }
+.subs { margin: 14px 0 0; font-size: 15px; color: var(--muted); }
+.go { display: inline-block; margin-top: 20px; font-size: 15px; font-weight: 600; }
+.items.wide { padding-top: 40px; }
+.gantt { padding-top: 32px; font-size: 14px; }
+.gantt ol { list-style: none; margin: 0; padding: 0; }
+.gantt li, .gaxis { display: grid; grid-template-columns: 240px 1fr; gap: 16px; align-items: center; }
+.gantt li { height: 26px; }
+.gantt .gt { position: relative; height: 100%; }
+.gaxis { height: 24px; color: var(--faint); font-family: var(--mono); font-size: 12px; }
+.gaxis .gt { grid-column: 2; }
+.gaxis .gt span { position: absolute; transform: translateX(-50%); }
+.gaxis .gt span:first-child { transform: none; }
+.gl { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb { position: absolute; top: 8px; height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 28%, var(--bg)); }
+.gantt li.on .gl, .gantt li.co .gl { color: var(--ink); font-weight: 600; }
+.gantt li.on .gb { background: var(--accent); }
+.gantt li.co { height: 34px; border-bottom: 1px solid var(--rule); margin-bottom: 6px; }
+.gantt li.co .gb { top: 11px; height: 12px; background: var(--ink); }
+.gantt a.gb:hover { filter: brightness(1.15); }
+.gsub { margin: 16px 0 4px; font-weight: 600; color: var(--ink); border-bottom: 1px solid var(--rule); padding-bottom: 6px; }
+@media (max-width: 720px) { .gantt li, .gaxis { grid-template-columns: 120px 1fr; gap: 10px; } .gantt { font-size: 13px; } }
+.more { margin: 24px 0 0; padding: 20px 24px; background: var(--tint); border-radius: 12px; font-weight: 600; }
+@media (max-width: 720px) { .row { grid-template-columns: 1fr; gap: 20px; } .item h3 { font-size: 21px; } .hero { padding: 56px 0 48px; } }
+
+.plist { list-style: none; padding: 0; margin: 8px 0 0; }
+.plist > li { padding: 26px 0; border-bottom: 1px solid var(--rule); }
+.plist .ph { display: flex; align-items: baseline; gap: 10px; }
+.plist .pt { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.45; color: var(--ink); }
+.plist .feat { font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.plist .oper { margin-left: auto; padding-left: 16px; font-size: 13px; color: var(--faint); white-space: nowrap; }
+.plist .oone { margin: 4px 0 12px; font-size: 15px; line-height: 1.65; color: var(--muted); }
+.plist .stack .ti { font-size: 13px; padding: 3px 9px 3px 7px; }
+.plist .ti.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+@media (max-width: 720px) { .plist .ph { flex-wrap: wrap; } .plist .oper { margin-left: 0; padding-left: 0; width: 100%; } }
+.empty { color: var(--muted); padding-top: 32px; }
+
+.filters { display: flex; flex-direction: column; gap: 14px; margin: 28px 0 0; padding-bottom: 20px; border-bottom: 1px solid var(--rule); }
+.filters[hidden] { display: none; }
+button.ti { font: inherit; font-size: 13.5px; line-height: 18px; padding: 5px 11px 5px 8px; cursor: pointer; }
+button.ti:hover { border-color: color-mix(in srgb, var(--c, var(--faint)) 60%, var(--rule)); }
+button.ti[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+button.ti[aria-pressed="true"] svg { fill: var(--bg); }
+button.ti[aria-pressed="true"] small { color: inherit; opacity: .7; }
+.filters .folded li:nth-child(n+19) { display: none; }
+.linkish { font: inherit; font-size: 14px; padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
+.linkish:hover { text-decoration: underline; text-underline-offset: 3px; }
+.linkish[hidden] { display: none; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; color: var(--muted); }
+.controls label { display: inline-flex; align-items: center; gap: 8px; }
+.controls select { font: inherit; max-width: 60vw; color: var(--ink); background: var(--bg);
+                   border: 1px solid var(--rule); border-radius: 8px; padding: 5px 8px; }
+.controls input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.count { margin-left: auto; color: var(--faint); }
+
+.sgroup { margin-top: 56px; }
+.sgroup:first-of-type { margin-top: 40px; }
+.sgroup h2 { font-size: 19px; font-weight: 700; margin: 0; padding-bottom: 12px; border-bottom: 2px solid var(--ink); }
+.skillset { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 32px; }
+.sk { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--rule); color: var(--ink); font-size: 15.5px; }
+a.sk:hover { text-decoration: none; }
+a.sk:hover span.n { text-decoration: underline; text-underline-offset: 3px; }
+.sk svg { width: 22px; height: 22px; flex: none; fill: var(--c); }
+.sk .ab { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 5px;
+          background: var(--tint); color: var(--muted); font-size: 12px; font-weight: 700; line-height: 1; }
+.stars { margin-left: auto; font-size: 14px; letter-spacing: 2px; color: var(--accent); white-space: nowrap; }
+.stars i { font-style: normal; color: var(--rule); }
+@media (max-width: 860px) { .skillset { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .skillset { grid-template-columns: minmax(0, 1fr); } }
+
+</style>
+</head>
+<body>
+
+<header class="site"><div class="wrap"><a class="brand" href="../index.html">정재윤</a><nav><a href="../index.html">소개</a><a href="../projects.html" aria-current="page">프로젝트</a><a href="../stack.html">기술</a><a href="../cv.html">이력</a></nav></div></header>
+<main class="detail"><div class="wrap narrow">
+  <h1>모바일 AWS EMR 인프라</h1>
+  <p class="intro">PC판 온프레미스와 다른 AWS EMR 위에 모바일 게임로그 백엔드 전개와 백업 자동화</p>
+  <dl class="facts"><div><dt>기간</dt><dd>2023 ~ 현재</dd></div><div><dt>역할</dt><dd>2~4인 중 선행 검증, 조회 SDK .NET 6 이식, CDK 전개, HDFS → S3 백업 담당 (서비스 도커 배포는 일부)</dd></div></dl>
+  <ul class="stack"><li><span class="ti lo" style="--c:#232F3E"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.763 10.036c0 .296.032.535.088.71.064.176.144.368.256.576.04.063.056.127.056.183 0 .08-.048.16-.152.24l-.503.335a.383.383 0 0 1-.208.072c-.08 0-.16-.04-.239-.112a2.47 2.47 0 0 1-.287-.375 6.18 6.18 0 0 1-.248-.471c-.622.734-1.405 1.101-2.347 1.101-.67 0-1.205-.191-1.596-.574-.391-.384-.59-.894-.59-1.533 0-.678.239-1.23.726-1.644.487-.415 1.133-.623 1.955-.623.272 0 .551.024.846.064.296.04.6.104.918.176v-.583c0-.607-.127-1.03-.375-1.277-.255-.248-.686-.367-1.3-.367-.28 0-.568.031-.863.103-.295.072-.583.16-.862.272a2.287 2.287 0 0 1-.28.104.488.488 0 0 1-.127.023c-.112 0-.168-.08-.168-.247v-.391c0-.128.016-.224.056-.28a.597.597 0 0 1 .224-.167c.279-.144.614-.264 1.005-.36a4.84 4.84 0 0 1 1.246-.151c.95 0 1.644.216 2.091.647.439.43.662 1.085.662 1.963v2.586zm-3.24 1.214c.263 0 .534-.048.822-.144.287-.096.543-.271.758-.51.128-.152.224-.32.272-.512.047-.191.08-.423.08-.694v-.335a6.66 6.66 0 0 0-.735-.136 6.02 6.02 0 0 0-.75-.048c-.535 0-.926.104-1.19.32-.263.215-.39.518-.39.917 0 .375.095.655.295.846.191.2.47.296.838.296zm6.41.862c-.144 0-.24-.024-.304-.08-.064-.048-.12-.16-.168-.311L7.586 5.55a1.398 1.398 0 0 1-.072-.32c0-.128.064-.2.191-.2h.783c.151 0 .255.025.31.08.065.048.113.16.16.312l1.342 5.284 1.245-5.284c.04-.16.088-.264.151-.312a.549.549 0 0 1 .32-.08h.638c.152 0 .256.025.32.08.063.048.12.16.151.312l1.261 5.348 1.381-5.348c.048-.16.104-.264.16-.312a.52.52 0 0 1 .311-.08h.743c.127 0 .2.065.2.2 0 .04-.009.08-.017.128a1.137 1.137 0 0 1-.056.2l-1.923 6.17c-.048.16-.104.263-.168.311a.51.51 0 0 1-.303.08h-.687c-.151 0-.255-.024-.32-.08-.063-.056-.119-.16-.15-.32l-1.238-5.148-1.23 5.14c-.04.16-.087.264-.15.32-.065.056-.177.08-.32.08zm10.256.215c-.415 0-.83-.048-1.229-.143-.399-.096-.71-.2-.918-.32-.128-.071-.215-.151-.247-.223a.563.563 0 0 1-.048-.224v-.407c0-.167.064-.247.183-.247.048 0 .096.008.144.024.048.016.12.048.2.08.271.12.566.215.878.279.319.064.63.096.95.096.502 0 .894-.088 1.165-.264a.86.86 0 0 0 .415-.758.777.777 0 0 0-.215-.559c-.144-.151-.416-.287-.807-.415l-1.157-.36c-.583-.183-1.014-.454-1.277-.813a1.902 1.902 0 0 1-.4-1.158c0-.335.073-.63.216-.886.144-.255.335-.479.575-.654.24-.184.51-.32.83-.415.32-.096.655-.136 1.006-.136.175 0 .359.008.535.032.183.024.35.056.518.088.16.04.312.08.455.127.144.048.256.096.336.144a.69.69 0 0 1 .24.2.43.43 0 0 1 .071.263v.375c0 .168-.064.256-.184.256a.83.83 0 0 1-.303-.096 3.652 3.652 0 0 0-1.532-.311c-.455 0-.815.071-1.062.223-.248.152-.375.383-.375.71 0 .224.08.416.24.567.159.152.454.304.877.44l1.134.358c.574.184.99.44 1.237.767.247.327.367.702.367 1.117 0 .343-.072.655-.207.926-.144.272-.336.511-.583.703-.248.2-.543.343-.886.447-.36.111-.734.167-1.142.167zM21.698 16.207c-2.626 1.94-6.442 2.969-9.722 2.969-4.598 0-8.74-1.7-11.87-4.526-.247-.223-.024-.527.272-.351 3.384 1.963 7.559 3.153 11.877 3.153 2.914 0 6.114-.607 9.06-1.852.439-.2.814.287.383.607zM22.792 14.961c-.336-.43-2.22-.207-3.074-.103-.255.032-.295-.192-.063-.36 1.5-1.053 3.967-.75 4.254-.399.287.36-.08 2.826-1.485 4.007-.215.184-.423.088-.327-.151.32-.79 1.03-2.57.695-2.994z"/></svg>AWS EMR</span></li><li><span class="ti" style="--c:#FF9900"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.429 17.571h10.714V6.857H6.429v10.714ZM18 6.857h1.714v.857H18V9.43h1.714v.857H18v1.285h1.714v.858H18v1.714h1.714V15H18v1.714h1.714v.857H18v.059a.8.8 0 0 1-.799.799h-.058v1.714h-.857v-1.714H14.57v1.714h-.857v-1.714H12.43v1.714h-.858v-1.714H9.857v1.714H9v-1.714H7.286v1.714h-.857v-1.714H6.37a.8.8 0 0 1-.799-.8v-.058H4.286v-.857H5.57V15H4.286v-.857H5.57v-1.714H4.286v-.858H5.57v-1.285H4.286v-.857H5.57V7.714H4.286v-.857H5.57V6.8a.8.8 0 0 1 .8-.799h.058V4.286h.857V6H9V4.286h.857V6h1.714V4.286h.858V6h1.285V4.286h.857V6h1.715V4.286h.857V6h.058a.8.8 0 0 1 .799.799v.058ZM12.429 23.09a.054.054 0 0 1-.054.053H.91a.053.053 0 0 1-.053-.053V11.625c0-.03.024-.054.053-.054h2.52v-.857H.91a.911.911 0 0 0-.91.91V23.09c0 .502.408.91.91.91h11.465a.91.91 0 0 0 .91-.91V21h-.856ZM24 .91v11.465a.91.91 0 0 1-.91.91h-2.52v-.856h2.519a.054.054 0 0 0 .053-.054V.91a.053.053 0 0 0-.053-.053H11.625a.053.053 0 0 0-.054.053v2.52h-.857V.91c0-.502.409-.91.91-.91H23.09a.91.91 0 0 1 .91.91Z"/></svg>EC2</span></li><li><span class="ti" style="--c:#569A31"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.913 13.147l.12-.895c.947.576 1.258.922 1.354 1.071-.16.031-.562.046-1.474-.176zm-2.174 7.988a.547.547 0 0 0-.005.073c0 .084-.207.405-1.124.768a10.28 10.28 0 0 1-1.438.432c-1.405.325-3.128.504-4.853.504-4.612 0-7.412-1.184-7.412-1.704a.547.547 0 0 0-.005-.073L1.81 5.602c.135.078.28.154.432.227.042.02.086.038.128.057.134.062.272.122.417.18l.179.069c.154.058.314.114.478.168.043.013.084.029.13.043.207.065.423.127.646.187l.176.044c.175.044.353.087.534.127a23.414 23.414 0 0 0 .843.17l.121.023c.252.045.508.085.768.122.071.011.144.02.216.03.2.027.4.053.604.077l.24.027c.245.026.49.05.74.07l.081.009c.275.022.552.04.83.056l.233.012c.21.01.422.018.633.025a33.088 33.088 0 0 0 2.795-.026l.232-.011c.278-.016.555-.034.83-.056l.08-.008c.25-.02.497-.045.742-.072l.238-.026c.205-.024.408-.05.609-.077.07-.01.141-.019.211-.03.261-.037.519-.078.772-.122l.111-.02c.215-.04.427-.082.634-.125l.212-.047c.186-.041.368-.085.546-.13l.166-.042c.225-.06.444-.122.654-.189.04-.012.077-.026.115-.038a10.6 10.6 0 0 0 .493-.173c.058-.021.114-.044.17-.066.15-.06.293-.12.43-.185.038-.017.079-.034.116-.052.153-.073.3-.15.436-.228l-.976 7.245c-2.488-.78-5.805-2.292-7.311-3a1.09 1.09 0 0 0-1.088-1.085c-.6 0-1.088.489-1.088 1.088 0 .6.488 1.089 1.088 1.089.196 0 .378-.056.537-.148 1.72.812 5.144 2.367 7.715 3.15zm-7.42-20.047c5.677 0 9.676 1.759 9.75 2.736l-.014.113c-.01.033-.031.067-.048.101-.015.028-.026.057-.047.087-.024.033-.058.068-.09.102-.028.03-.051.06-.084.09-.038.035-.087.07-.133.105-.04.03-.074.06-.119.091-.053.036-.116.071-.177.107-.05.03-.095.06-.15.09-.068.036-.147.073-.222.11-.059.028-.114.057-.177.085-.084.038-.177.074-.268.111-.068.027-.13.054-.203.082-.097.036-.205.072-.31.107-.075.026-.148.053-.228.079-.111.035-.233.069-.35.103-.085.024-.165.05-.253.073-.124.034-.258.065-.389.098-.093.022-.181.046-.278.068-.139.032-.287.061-.433.091-.098.02-.191.041-.293.06-.155.03-.32.057-.482.084-.1.018-.198.036-.302.052-.166.026-.342.048-.515.072-.11.014-.213.03-.325.044-.181.023-.372.041-.56.06-.11.012-.218.025-.332.036-.188.016-.386.029-.58.043-.122.009-.24.02-.364.028-.207.012-.422.02-.635.028-.12.005-.234.012-.354.016a35.605 35.605 0 0 1-2.069 0c-.12-.004-.234-.011-.352-.016-.214-.008-.43-.016-.637-.028-.122-.008-.238-.02-.36-.027-.195-.015-.394-.028-.584-.044-.11-.01-.215-.024-.324-.035-.19-.02-.384-.038-.568-.06l-.315-.044c-.176-.024-.355-.046-.525-.073-.1-.015-.192-.033-.29-.05-.167-.028-.335-.055-.494-.086-.096-.018-.183-.038-.276-.056-.151-.032-.305-.062-.45-.095-.09-.02-.173-.043-.26-.064-.138-.034-.277-.067-.407-.102-.082-.022-.157-.046-.235-.069a11.75 11.75 0 0 1-.368-.108c-.075-.024-.141-.049-.213-.073-.11-.037-.223-.075-.325-.113-.067-.025-.125-.051-.188-.077-.096-.038-.195-.076-.282-.115-.06-.027-.11-.054-.166-.08-.08-.039-.162-.077-.233-.116-.052-.028-.094-.055-.142-.084-.063-.038-.13-.075-.185-.113-.043-.029-.075-.058-.113-.086-.048-.037-.098-.073-.139-.11-.032-.029-.054-.057-.08-.087-.033-.035-.069-.07-.093-.104-.02-.03-.031-.058-.046-.086-.018-.035-.039-.068-.049-.102l-.015-.113c.076-.977 4.074-2.736 9.748-2.736zm12.182 12.124c-.118-.628-.84-1.291-2.31-2.128l.963-7.16a.531.531 0 0 0 .005-.073C22.16 1.581 16.447 0 11.32 0 6.194 0 .482 1.581.482 3.851a.58.58 0 0 0 .005.072L2.819 21.25c.071 2.002 5.236 2.75 8.5 2.75 1.805 0 3.615-.188 5.098-.531.598-.138 1.133-.3 1.592-.48 1.18-.467 1.789-1.053 1.813-1.739l.945-7.018c.557.131 1.016.197 1.389.197.54 0 .902-.137 1.134-.413a.956.956 0 0 0 .21-.804Z"/></svg>S3</span></li><li><span class="ti"><span class="ab" aria-hidden="true">M</span>MSK</span></li><li><span class="ti" style="--c:#FF9900"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.9855 0c-.2941.0031-.5335.2466-.534.5482L4.446 5.456c0 .1451.06.2835.159.3891a.5322.5322 0 0 0 .3806.1562h3.4282l8.197 17.6805a.5365.5365 0 0 0 .4885.3181h5.811c.2969 0 .5426-.2448.5426-.5482V18.544c0-.3035-.2392-.5482-.5425-.5482h-2.0138L12.7394.3153C12.647.124 12.4564 0 12.2452 0h-7.254Zm.5397 1.0907h6.3678l8.16 17.6804a.5365.5365 0 0 0 .4885.3181h1.8178v3.8173H17.437L9.2402 5.226a.536.536 0 0 0-.4885-.318H5.5223Zm2.0137 8.2366c-.2098.0011-.3937.1193-.4857.3096L.6002 23.2133a.5506.5506 0 0 0 .0313.5282.5334.5334 0 0 0 .4544.25h6.169a.5468.5468 0 0 0 .497-.3096l3.38-7.166a.5405.5405 0 0 0-.0029-.4686L8.036 9.637a.5468.5468 0 0 0-.4942-.3096Zm.0057 1.8036 2.488 5.1522-3.1214 6.6206H1.9465Z"/></svg>Lambda</span></li><li><span class="ti"><span class="ab" aria-hidden="true">E</span>EventBridge</span></li><li><span class="ti"><span class="ab" aria-hidden="true">S</span>SSM</span></li><li><span class="ti lo" style="--c:#232F3E"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.763 10.036c0 .296.032.535.088.71.064.176.144.368.256.576.04.063.056.127.056.183 0 .08-.048.16-.152.24l-.503.335a.383.383 0 0 1-.208.072c-.08 0-.16-.04-.239-.112a2.47 2.47 0 0 1-.287-.375 6.18 6.18 0 0 1-.248-.471c-.622.734-1.405 1.101-2.347 1.101-.67 0-1.205-.191-1.596-.574-.391-.384-.59-.894-.59-1.533 0-.678.239-1.23.726-1.644.487-.415 1.133-.623 1.955-.623.272 0 .551.024.846.064.296.04.6.104.918.176v-.583c0-.607-.127-1.03-.375-1.277-.255-.248-.686-.367-1.3-.367-.28 0-.568.031-.863.103-.295.072-.583.16-.862.272a2.287 2.287 0 0 1-.28.104.488.488 0 0 1-.127.023c-.112 0-.168-.08-.168-.247v-.391c0-.128.016-.224.056-.28a.597.597 0 0 1 .224-.167c.279-.144.614-.264 1.005-.36a4.84 4.84 0 0 1 1.246-.151c.95 0 1.644.216 2.091.647.439.43.662 1.085.662 1.963v2.586zm-3.24 1.214c.263 0 .534-.048.822-.144.287-.096.543-.271.758-.51.128-.152.224-.32.272-.512.047-.191.08-.423.08-.694v-.335a6.66 6.66 0 0 0-.735-.136 6.02 6.02 0 0 0-.75-.048c-.535 0-.926.104-1.19.32-.263.215-.39.518-.39.917 0 .375.095.655.295.846.191.2.47.296.838.296zm6.41.862c-.144 0-.24-.024-.304-.08-.064-.048-.12-.16-.168-.311L7.586 5.55a1.398 1.398 0 0 1-.072-.32c0-.128.064-.2.191-.2h.783c.151 0 .255.025.31.08.065.048.113.16.16.312l1.342 5.284 1.245-5.284c.04-.16.088-.264.151-.312a.549.549 0 0 1 .32-.08h.638c.152 0 .256.025.32.08.063.048.12.16.151.312l1.261 5.348 1.381-5.348c.048-.16.104-.264.16-.312a.52.52 0 0 1 .311-.08h.743c.127 0 .2.065.2.2 0 .04-.009.08-.017.128a1.137 1.137 0 0 1-.056.2l-1.923 6.17c-.048.16-.104.263-.168.311a.51.51 0 0 1-.303.08h-.687c-.151 0-.255-.024-.32-.08-.063-.056-.119-.16-.15-.32l-1.238-5.148-1.23 5.14c-.04.16-.087.264-.15.32-.065.056-.177.08-.32.08zm10.256.215c-.415 0-.83-.048-1.229-.143-.399-.096-.71-.2-.918-.32-.128-.071-.215-.151-.247-.223a.563.563 0 0 1-.048-.224v-.407c0-.167.064-.247.183-.247.048 0 .096.008.144.024.048.016.12.048.2.08.271.12.566.215.878.279.319.064.63.096.95.096.502 0 .894-.088 1.165-.264a.86.86 0 0 0 .415-.758.777.777 0 0 0-.215-.559c-.144-.151-.416-.287-.807-.415l-1.157-.36c-.583-.183-1.014-.454-1.277-.813a1.902 1.902 0 0 1-.4-1.158c0-.335.073-.63.216-.886.144-.255.335-.479.575-.654.24-.184.51-.32.83-.415.32-.096.655-.136 1.006-.136.175 0 .359.008.535.032.183.024.35.056.518.088.16.04.312.08.455.127.144.048.256.096.336.144a.69.69 0 0 1 .24.2.43.43 0 0 1 .071.263v.375c0 .168-.064.256-.184.256a.83.83 0 0 1-.303-.096 3.652 3.652 0 0 0-1.532-.311c-.455 0-.815.071-1.062.223-.248.152-.375.383-.375.71 0 .224.08.416.24.567.159.152.454.304.877.44l1.134.358c.574.184.99.44 1.237.767.247.327.367.702.367 1.117 0 .343-.072.655-.207.926-.144.272-.336.511-.583.703-.248.2-.543.343-.886.447-.36.111-.734.167-1.142.167zM21.698 16.207c-2.626 1.94-6.442 2.969-9.722 2.969-4.598 0-8.74-1.7-11.87-4.526-.247-.223-.024-.527.272-.351 3.384 1.963 7.559 3.153 11.877 3.153 2.914 0 6.114-.607 9.06-1.852.439-.2.814.287.383.607zM22.792 14.961c-.336-.43-2.22-.207-3.074-.103-.255.032-.295-.192-.063-.36 1.5-1.053 3.967-.75 4.254-.399.287.36-.08 2.826-1.485 4.007-.215.184-.423.088-.327-.151.32-.79 1.03-2.57.695-2.994z"/></svg>AWS CDK(Java)</span></li><li><span class="ti" style="--c:#512BD4"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M24 8.77h-2.468v7.565h-1.425V8.77h-2.462V7.53H24zm-6.852 7.565h-4.821V7.53h4.63v1.24h-3.205v2.494h2.953v1.234h-2.953v2.604h3.396zm-6.708 0H8.882L4.78 9.863a2.896 2.896 0 0 1-.258-.51h-.036c.032.189.048.592.048 1.21v5.772H3.157V7.53h1.659l3.965 6.32c.167.261.275.442.323.54h.024c-.04-.233-.06-.629-.06-1.185V7.529h1.372zm-8.703-.693a.868.829 0 0 1-.869.829.868.829 0 0 1-.868-.83.868.829 0 0 1 .868-.828.868.829 0 0 1 .869.829Z"/></svg>.NET 6</span></li></ul>
+  
+  <div class="prose"><h2>무엇을</h2>
+<p>모바일 로스트아크의 게임로그 백엔드를 PC판 온프레미스(Cloudera)와 다른 AWS EMR과 EC2 위에 세운 일입니다. 그중 선행 검증, 조회 SDK 이식, CDK 전개 코드, HDFS → S3 백업을 맡았습니다.</p>
+<h2>왜</h2>
+<p>모바일판 데이터 백엔드는 PC판과 달리 AWS EMR 위에 두었습니다. PC에서 쓰던 조회 SDK와 운영 도구가 EMR에서 그대로 도는지부터 확인해야 했습니다.</p>
+<h2>어떻게</h2>
+<ul>
+<li>선행 검증(2021~2022, 북미 서비스용 EMR): .NET Livy SDK의 EMR 호출 시 YARN 큐·메모리·Jars 경로 문제 정리, EMR Step 취소 후 살아남는 Spark 앱을 yarn kill 스크립트로 정리</li>
+<li>조회 SDK .NET 6 이식: .NET 6에서 깨지는 BinaryFormatter 직렬화를 JSON으로 교체, 모바일 운영툴과 PC의 로깅 차이를 delegate 기반 Logger로 연결</li>
+<li>AWS CDK(Java)로 MSK·EC2 전개 코드 작성</li>
+<li>HDFS → S3 백업: Lambda + EventBridge + SSM으로 EMR 마스터에서 distcp 원격 실행, 최근 N시간은 무조건 재백업하고 그 이전은 없는 파일만 복사</li>
+</ul>
+<h2>결과</h2>
+<ul>
+<li>인프라팀으로 넘어가기 전까지 직접 짠 CDK 코드로 전개, 지금은 요구사항을 정리해 인프라팀에 전달</li>
+<li>S3 백업을 QA에서 CBT 환경까지 확장</li>
+</ul></div>
+  <nav class="pager"><a href="p11-hbase-%EC%9C%A0%EC%8B%A4-%EA%B0%90%EC%8B%9C.html"><small>이전</small>HBase 데이터 유실 복구와 상시 감시 신설</a><a class="next" href="p13-orca-lake-%EA%B5%AC%EC%B6%95.html"><small>다음</small>Orca Lake 데이터레이크 구축과 이전</a></nav>
+</div></main>
+<footer class="site"><div class="wrap">정재윤 · wodbs603@naver.com</div></footer>
+</body>
+</html>
